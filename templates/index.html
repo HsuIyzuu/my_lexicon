@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Lexicon</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --bg: #f8fafc;
+            --card-bg: #ffffff;
+            --text-main: #1e293b;
+            --text-sub: #64748b;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text-main); margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        
+        /* Input Section */
+        .input-group { display: flex; gap: 10px; margin-bottom: 20px; background: var(--card-bg); padding: 15px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+        input[type="text"] { flex: 1; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 16px; outline: none; }
+        button { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; transition: 0.2s; }
+        .btn-add { background: var(--primary); color: white; }
+        .btn-add:hover { opacity: 0.9; }
+        
+        /* Tabs & Controls */
+        .controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+        .tabs button { background: transparent; color: var(--text-sub); margin-right: 10px; }
+        .tabs button.active { color: var(--primary); border-bottom: 2px solid var(--primary); border-radius: 0; }
+        .search-bar { padding: 8px; border: 1px solid #e2e8f0; border-radius: 6px; }
+
+        /* Word List */
+        .word-list { display: grid; gap: 15px; }
+        .card { background: var(--card-bg); padding: 20px; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); position: relative; }
+        .card-header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+        .word-title { font-size: 20px; font-weight: 700; color: var(--text-main); }
+        .phonetic { color: var(--text-sub); font-family: "Lucida Sans Unicode", "Arial Unicode MS"; font-size: 14px; }
+        .audio-btn { cursor: pointer; background: none; border: 1px solid #e2e8f0; border-radius: 50%; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; }
+        
+        .cn-def { font-size: 16px; color: #0f172a; margin-bottom: 8px; font-weight: 500; }
+        .en-defs { font-size: 14px; color: #334155; margin-bottom: 8px; line-height: 1.4; }
+        .en-def-item { margin-bottom: 4px; }
+        .examples { background: #f1f5f9; padding: 10px; border-radius: 8px; font-size: 13px; color: #475569; font-style: italic; margin-top: 10px; }
+        
+        .meta-info { font-size: 12px; color: #94a3b8; margin-top: 15px; display: flex; justify-content: space-between; }
+        .badge { background: #e0f2fe; color: #0284c7; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+        
+        .delete-btn { position: absolute; top: 15px; right: 15px; color: #ef4444; background: none; font-size: 20px; opacity: 0.2; }
+        .delete-btn:hover { opacity: 1; }
+
+        /* Phrase Specific */
+        .phrase-card .word-title { color: #059669; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>My Lexicon</h1>
+    
+    <div class="input-group">
+        <input type="text" id="wordInput" placeholder="输入单词或短语..." onkeydown="if(event.keyCode==13) addEntry()">
+        <button class="btn-add" onclick="addEntry()">添加 (Enter)</button>
+    </div>
+
+    <div class="controls">
+        <div class="tabs">
+            <button id="tab-all" class="active" onclick="filterType('all')">全部</button>
+            <button id="tab-word" onclick="filterType('word')">单词</button>
+            <button id="tab-phrase" onclick="filterType('phrase')">短语/句子</button>
+        </div>
+        <div>
+            <select id="sortSelect" onchange="renderList()" style="padding: 8px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                <option value="date">按时间排序</option>
+                <option value="count">按频次排序</option>
+                <option value="alpha">A-Z 排序</option>
+            </select>
+            <input type="text" class="search-bar" id="searchInput" placeholder="Search..." oninput="renderList()">
+        </div>
+    </div>
+
+    <div id="listContainer" class="word-list">
+        <!-- JS will inject content here -->
+    </div>
+</div>
+
+<script>
+    let allData = [];
+    let currentFilter = 'all';
+
+    async function loadData() {
+        const res = await fetch('/list');
+        allData = await res.json();
+        renderList();
+    }
+
+    async function addEntry() {
+        const input = document.getElementById('wordInput');
+        const word = input.value.trim();
+        if (!word) return;
+
+        // 简单判断：如果包含空格，视为短语
+        const type = word.includes(' ') ? 'phrase' : 'word';
+
+        input.value = '正在查询...';
+        input.disabled = true;
+
+        try {
+            const res = await fetch('/add', {
+                headers: { 'Content-Type': 'application/json' },
+                method: 'POST',
+                body: JSON.stringify({ word: word, type: type })
+            });
+            const data = await res.json();
+            
+            input.value = '';
+            input.disabled = false;
+            input.focus();
+            loadData(); // 重新加载列表
+        } catch (e) {
+            alert('Error adding word');
+            input.disabled = false;
+        }
+    }
+
+    async function deleteEntry(id) {
+        if(!confirm('确定删除吗？')) return;
+        await fetch('/delete', {
+            headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            body: JSON.stringify({ id: id })
+        });
+        loadData();
+    }
+
+    function playAudio(url) {
+        new Audio(url).play();
+    }
+
+    function filterType(type) {
+        currentFilter = type;
+        document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+        document.getElementById(`tab-${type}`).classList.add('active');
+        renderList();
+    }
+
+    function renderList() {
+        const container = document.getElementById('listContainer');
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+        const sortType = document.getElementById('sortSelect').value;
+
+        let filtered = allData.filter(item => {
+            // Type Filter
+            if (currentFilter !== 'all' && item.type !== currentFilter) return false;
+            // Search Filter
+            const searchMatch = item.word.toLowerCase().includes(searchTerm) || 
+                                item.cn_def.includes(searchTerm) ||
+                                (item.definitions && item.definitions.join(' ').toLowerCase().includes(searchTerm));
+            return searchMatch;
+        });
+
+        // Sorting
+        filtered.sort((a, b) => {
+            if (sortType === 'date') return new Date(b.added_at) - new Date(a.added_at); // Newest first
+            if (sortType === 'count') return b.count - a.count; // Most frequent first
+            if (sortType === 'alpha') return a.word.localeCompare(b.word);
+            return 0;
+        });
+
+        container.innerHTML = filtered.map(item => {
+            const isPhrase = item.type === 'phrase';
+            const cardClass = isPhrase ? 'card phrase-card' : 'card';
+            
+            let html = `<div class="${cardClass}">
+                <button class="delete-btn" onclick="deleteEntry(${item.id})">×</button>
+                <div class="card-header">
+                    <span class="word-title">${item.word}</span>`;
+            
+            if (!isPhrase && item.phonetic) {
+                html += `<span class="phonetic">${item.phonetic}</span>`;
+            }
+            
+            if (!isPhrase && item.audio_url) {
+                html += `<button class="audio-btn" onclick="playAudio('${item.audio_url}')">🔊</button>`;
+            }
+
+            html += `</div>
+                <div class="cn-def">${item.cn_def}</div>`;
+
+            if (!isPhrase && item.definitions && item.definitions.length > 0) {
+                html += `<div class="en-defs">
+                    ${item.definitions.map(d => `<div class="en-def-item">${d}</div>`).join('')}
+                </div>`;
+            }
+
+            if (!isPhrase && item.examples && item.examples.length > 0) {
+                html += `<div class="examples">
+                    " ${item.examples[0]} "
+                </div>`;
+            }
+
+            html += `<div class="meta-info">
+                <span>加入: ${new Date(item.added_at).toLocaleDateString()}</span>
+                <span class="badge">查询次数: ${item.count}</span>
+            </div>
+            </div>`;
+            return html;
+        }).join('');
+    }
+
+    // Init
+    loadData();
+</script>
+
+</body>
+</html>
